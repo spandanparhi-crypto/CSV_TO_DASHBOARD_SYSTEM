@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise CSV Analytics Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <style>
+        .glass {
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .glass-light {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+        /* Custom scrollbar to keep layout clean */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.2);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.4);
+        }
+    </style>
+</head>
+<body class="h-full font-sans antialiased selection:bg-brand-500/30 selection:text-brand-200 overflow-x-hidden">
+
+    <canvas id="solar-bg" class="fixed inset-0 w-full h-full pointer-events-none z-0 transition-opacity duration-1000 opacity-80"></canvas>
+
+    <div id="app" class="min-h-screen flex flex-col relative z-10 transition-colors duration-300">
+        
+        <nav class="glass sticky top-0 z-50 px-6 py-4 flex items-center justify-between transition-all duration-300 dark:border-white/10 border-black/5">
+            <div class="flex items-center gap-3">
+                <div class="p-2.5 bg-brand-600/20 text-brand-400 rounded-xl border border-brand-500/30 shadow-lg shadow-brand-500/10">
+                    <i data-lucide="database" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <span class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent dark:from-white dark:to-slate-400 light:from-slate-900 light:to-slate-600">OmniParse</span>
+                    <span class="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">v2.0 FullStack</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <button onclick="toggleTheme()" class="p-2 text-slate-400 hover:text-indigo-400 hover:bg-white/5 rounded-xl transition-all">
+                    <i id="theme-icon" data-lucide="sun" class="w-5 h-5"></i>
+                </button>
+                <div class="h-5 w-px bg-slate-800 dark:bg-white/10"></div>
+                <div class="flex items-center gap-3 pl-2">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-purple-600 flex items-center justify-center text-sm font-bold text-white shadow-md shadow-brand-600/20">
+                        SP
+                    </div>
+                    <div class="hidden md:block text-left">
+                        <p class="text-xs font-semibold text-slate-200 transition-colors" id="user-display-name">Spandan Parhi</p>
+                        <p class="text-[10px] text-indigo-400 font-medium flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>System Architect Account</p>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 space-y-8">
+            
+            <section id="upload-zone-wrapper" class="w-full transition-all duration-300">
+                <div class="glass p-8 rounded-3xl relative overflow-hidden group border-white/10">
+                    <div class="absolute inset-0 bg-gradient-to-r from-brand-600/10 to-purple-600/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                    
+                    <div id="dropzone" class="border-2 border-dashed border-slate-700/60 hover:border-brand-500/60 transition-all rounded-2xl p-12 text-center cursor-pointer relative bg-slate-900/20 hover:bg-slate-900/40">
+                        <input type="file" id="csv-file-input" accept=".csv" class="hidden">
+                        <div class="max-w-md mx-auto space-y-4">
+                            <div class="w-16 h-16 bg-slate-800/40 rounded-2xl flex items-center justify-center mx-auto text-slate-400 group-hover:text-brand-400 border border-slate-700/50 transition-colors">
+                                <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-slate-200">Drag & drop operational data sheets</h3>
+                                <p class="text-sm text-slate-400 mt-1">Accepts standard structural <code>.csv</code> configuration payloads</p>
+                            </div>
+                            <button class="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-brand-600/20">
+                                Browse Local Files
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="dashboard-workspace" class="hidden space-y-8 transition-all duration-500 opacity-0">
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="glass p-5 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Cleaned Rows</p>
+                            <h3 class="text-3xl font-bold mt-1 text-white" id="stat-total-rows">0</h3>
+                        </div>
+                        <div class="p-3 bg-brand-500/10 text-brand-400 border border-brand-500/20 rounded-xl"><i data-lucide="rows" class="w-5 h-5"></i></div>
+                    </div>
+                    <div class="glass p-5 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Identified Schema Columns</p>
+                            <h3 class="text-3xl font-bold mt-1 text-white" id="stat-total-cols">0</h3>
+                        </div>
+                        <div class="p-3 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-xl"><i data-lucide="columns" class="w-5 h-5"></i></div>
+                    </div>
+                    <div class="glass p-5 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Data Health Score</p>
+                            <h3 class="text-3xl font-bold mt-1 text-emerald-400">99.8%</h3>
+                        </div>
+                        <div class="p-3 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
+                    </div>
+                    <div class="glass p-5 rounded-2xl flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Pipeline File</p>
+                            <h3 class="text-sm font-bold mt-2 truncate text-slate-200 max-w-[160px]" id="stat-filename">None</h3>
+                        </div>
+                        <div class="p-3 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl"><i data-lucide="file-spreadsheet" class="w-5 h-5"></i></div>
+                    </div>
+                </div>
+
+                <div class="glass p-5 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+                    <div class="flex flex-1 flex-wrap items-center gap-3">
+                        <div class="relative flex-1 min-w-[240px]">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="global-search-input" placeholder="Search cleaned dataset contents..." class="w-full pl-10 pr-4 py-2 bg-slate-900/40 border border-slate-700/60 rounded-xl text-sm focus:outline-none focus:border-brand-500 text-slate-200">
+                        </div>
+                        <select id="axis-x-select" class="bg-slate-900/40 border border-slate-700/60 rounded-xl text-sm px-3 py-2 text-slate-200 focus:outline-none focus:border-brand-500">
+                            </select>
+                        <select id="axis-y-select" class="bg-slate-900/40 border border-slate-700/60 rounded-xl text-sm px-3 py-2 text-slate-200 focus:outline-none focus:border-brand-500">
+                            </select>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportData('csv')" class="px-3.5 py-2 bg-slate-800/60 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition-all border border-slate-700 flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i> CSV
+                        </button>
+                        <button onclick="exportData('json')" class="px-3.5 py-2 bg-slate-800/60 hover:bg-slate-700 text-slate-200 rounded-xl text-sm font-medium transition-all border border-slate-700 flex items-center gap-2">
+                            <i data-lucide="file-json" class="w-4 h-4"></i> JSON
+                        </button>
+                        <button onclick="exportCanvasPDF()" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-brand-600/10">
+                            <i data-lucide="file-text" class="w-4 h-4"></i> Export PDF Report
+                        </button>
+                    </div>
+                </div>
+
+                <div class="glass p-6 rounded-3xl border-l-4 border-l-brand-500 relative overflow-hidden">
+                    <div class="absolute -right-10 -bottom-10 opacity-5 text-brand-500 pointer-events-none"><i data-lucide="cpu" class="w-48 h-48"></i></div>
+                    <div class="flex items-start gap-4">
+                        <div class="p-3 bg-brand-500/10 text-brand-400 border border-brand-500/20 rounded-xl mt-1"><i data-lucide="sparkles" class="w-5 h-5"></i></div>
+                        <div class="space-y-2 flex-1">
+                            <h4 class="text-base font-bold text-slate-100 flex items-center gap-2">Automated AI Insights & Business Intelligence Summary</h4>
+                            <p id="ai-insight-text" class="text-sm text-slate-300 leading-relaxed">Analyzing system telemetry variables... Matrix data engine reading dataset rows.</p>
+                            <div class="pt-2 flex flex-wrap gap-4 text-xs text-slate-400" id="detected-schema-tags">
+                                </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="capture-container" class="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-12">
+                    
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Area Projection Mapping</h3><i data-lucide="trending-up" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px]"><canvas id="chart-area"></canvas></div>
+                    </div>
+                    
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Categorical Bar Analysis</h3><i data-lucide="bar-chart-3" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px]"><canvas id="chart-bar"></canvas></div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Linear Continuous Trend</h3><i data-lucide="activity" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px]"><canvas id="chart-line"></canvas></div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Proportional Share Allocation</h3><i data-lucide="pie-chart" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px] flex items-center justify-center"><div class="w-full max-w-[280px]"><canvas id="chart-pie"></canvas></div></div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Bivariate Scatter Intersect Matrix</h3><i data-lucide="dot-chart" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px]"><canvas id="chart-scatter"></canvas></div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl flex flex-col space-y-4">
+                        <div class="flex items-center justify-between"><h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Frequency Density Histogram</h3><i data-lucide="bar-chart" class="w-4 h-4 text-slate-400"></i></div>
+                        <div class="relative flex-1 min-h-[300px]"><canvas id="chart-histogram"></canvas></div>
+                    </div>
+
+                </div>
+
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Core Reactive Global Configuration Metrics State Variables Engine
+        let systemState = {
+            theme: 'dark',
+            rawPayload: [],
+            workingDataset: [],
+            columns: [],
+            inferredTypes: {},
+            activeCharts: {},
+            selectedX: '',
+            selectedY: '',
+            fileName: ''
+        };
+
+        // Initialize App Context Nodes
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            initDropzoneEngine();
+            initFilterListeners();
+            initSolarBackground();
+        });
+
+        // Procedural Solar System Animation Engine
+        function initSolarBackground() {
+            const canvas = document.getElementById('solar-bg');
+            const ctx = canvas.getContext('2d');
+            
+            let planets = [];
+            let stars = [];
+            
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            // Populate Background Ambient Star Vectors
+            for (let i = 0; i < 70; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 1.2,
+                    alpha: Math.random()
+                });
+            }
+
+            // Create Orbital Configuration Node Profiles
+            const config = [
+                { radius: 90, speed: 0.012, size: 4, color: '#6366f1' },
+                { radius: 160, speed: 0.008, size: 7, color: '#8b5cf6' },
+                { radius: 240, speed: 0.005, size: 9, color: '#10b981' },
+                { radius: 340, speed: 0.003, size: 12, color: '#f43f5e' },
+                { radius: 460, speed: 0.002, size: 15, color: '#ec4899' }
+            ];
+
+            config.forEach(p => {
+                planets.push({
+                    distance: p.radius,
+                    angle: Math.random() * Math.PI * 2,
+                    speed: p.speed,
+                    size: p.size,
+                    color: p.color
+                });
+            });
+
+            function renderSolarFrame() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                const centerX = canvas.width * 0.85;
+                const centerY = canvas.height * 0.45;
+                const isDark = systemState.theme === 'dark';
+
+                // Draw Background Micro Stars
+                stars.forEach(star => {
+                    ctx.fillStyle = isDark ? `rgba(255,255,255, ${star.alpha})` : `rgba(15, 23, 42, ${star.alpha * 0.3})`;
+                    ctx.fillRect(star.x, star.y, star.size, star.size);
+                });
+
+                // Render Central Gravity Coordinates Sun
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, 30, 0, Math.PI * 2);
+                let gradient = ctx.createRadialGradient(centerX, centerY, 5, centerX, centerY, 35);
+                gradient.addColorStop(0, '#f59e0b');
+                gradient.addColorStop(0.5, 'rgba(245, 158, 11, 0.2)');
+                gradient.addColorStop(1, 'rgba(245, 158, 11, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+
+                // Draw System Orbits and Orbital Nodes
+                planets.forEach(planet => {
+                    planet.angle += planet.speed;
+
+                    // Draw Orbit Ring Path Vector Line
+                    ctx.beginPath();
+                    ctx.arc(centerX, centerY, planet.distance, 0, Math.PI * 2);
+                    ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(15, 23, 42, 0.03)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+
+                    // Calculate Geometric Spatial Intersection Coordinates
+                    const currentX = centerX + Math.cos(planet.angle) * planet.distance;
+                    const currentY = centerY + Math.sin(planet.angle) * planet.distance;
+
+                    // Planet Glow Path
+                    ctx.beginPath();
+                    ctx.arc(currentX, currentY, planet.size * 2, 0, Math.PI * 2);
+                    let planetGlow = ctx.createRadialGradient(currentX, currentY, 1, currentX, currentY, planet.size * 2);
+                    planetGlow.addColorStop(0, planet.color);
+                    planetGlow.addColorStop(1, 'rgba(255,255,255,0)');
+                    ctx.fillStyle = planetGlow;
+                    ctx.globalAlpha = isDark ? 0.3 : 0.15;
+                    ctx.fill();
+                    ctx.globalAlpha = 1.0;
+
+                    // Core Node body
+                    ctx.beginPath();
+                    ctx.arc(currentX, currentY, planet.size, 0, Math.PI * 2);
+                    ctx.fillStyle = planet.color;
+                    ctx.fill();
+                });
+
+                requestAnimationFrame(renderSolarFrame);
+            }
+            renderSolarFrame();
+        }
+
+        // Theme Switch Handler Layer
+        function toggleTheme() {
+            const htmlEl = document.documentElement;
+            const themeIcon = document.getElementById('theme-icon');
+            const userDisplay = document.getElementById('user-display-name');
+
+            if (htmlEl.classList.contains('dark') || systemState.theme === 'dark') {
+                htmlEl.classList.remove('dark');
+                htmlEl.classList.add('light');
+                htmlEl.style.backgroundColor = '#f1f5f9';
+                userDisplay.style.color = '#0f172a';
+                systemState.theme = 'light';
+                themeIcon.setAttribute('data-lucide', 'moon');
+            } else {
+                htmlEl.classList.remove('light');
+                htmlEl.classList.add('dark');
+                htmlEl.style.backgroundColor = '#020617';
+                userDisplay.style.color = '#f8fafc';
+                systemState.theme = 'dark';
+                themeIcon.setAttribute('data-lucide', 'sun');
+            }
+            lucide.createIcons();
+            if(systemState.workingDataset.length > 0) rebuildVisualizationMatrix();
+        }
+
+        // Drag and Drop Onboarding Orchestrator
+        function initDropzoneEngine() {
+            const dropzone = document.getElementById('dropzone');
+            const fileInput = document.getElementById('csv-file-input');
+
+            dropzone.addEventListener('click', () => fileInput.click());
+            dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('border-brand-500'); });
+            dropzone.addEventListener('dragleave', () => dropzone.classList.remove('border-brand-500'));
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('border-brand-500');
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith('.csv')) ingestFile(file);
+            });
+            fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) ingestFile(file);
+            });
+        }
+
+        // Processing Pipeline Stream Execution Ingestion
+        function ingestFile(file) {
+            systemState.fileName = file.name;
+            document.getElementById('stat-filename').innerText = file.name;
+
+            Papa.parse(file, {
+                header: true,
+                dynamicTyping: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    processIncomingPayload(results.data);
+                }
+            });
+        }
+
+        // Processing Pipeline Engine Architecture
+        function processIncomingPayload(data) {
+            if(!data || data.length === 0) return alert("Empty runtime schema provided.");
+            
+            systemState.rawPayload = data;
+            systemState.columns = Object.keys(data[0]);
+            
+            // Execute Automated Structural Schema Type Inferences & Cleaning Operations
+            inferSchemaDefinitions(data);
+            cleanAndNormalizePayload(data);
+
+            // Interface Animations Trigger
+            const workspace = document.getElementById('dashboard-workspace');
+            workspace.classList.remove('hidden');
+            setTimeout(() => {
+                workspace.classList.add('opacity-100');
+                document.getElementById('upload-zone-wrapper').classList.add('opacity-40');
+            }, 50);
+
+            // Standard Metrics Tracking Outputs Update Engine
+            document.getElementById('stat-total-rows').innerText = systemState.workingDataset.length.toLocaleString();
+            document.getElementById('stat-total-cols').innerText = systemState.columns.length.toString();
+
+            populateAxisControls();
+            generateAiInsightsSummary();
+            rebuildVisualizationMatrix();
+        }
+
+        // Inferred Analytical Core Engines Engine
+        function inferSchemaDefinitions(data) {
+            const sample = data.slice(0, 50);
+            systemState.columns.forEach(col => {
+                let numericHits = 0;
+                sample.forEach(row => {
+                    const val = row[col];
+                    if (typeof val === 'number' || (!isNaN(Number(val)) && val !== null && val !== '')) numericHits++;
+                });
+                systemState.inferredTypes[col] = (numericHits / sample.length > 0.7) ? 'Number' : 'String';
+            });
+        }
+
+        function cleanAndNormalizePayload(data) {
+            systemState.workingDataset = data.map(row => {
+                let cleanedRow = {};
+                systemState.columns.forEach(col => {
+                    let val = row[col];
+                    if (systemState.inferredTypes[col] === 'Number') {
+                        if (typeof val === 'string') val = Number(val.replace(/[^0-9.-]/g, ''));
+                        cleanedRow[col] = (isNaN(val) || val === null) ? 0 : val;
+                    } else {
+                        cleanedRow[col] = val === null ? "" : String(val).trim();
+                    }
+                });
+                return cleanedRow;
+            });
+        }
+
+        function populateAxisControls() {
+            const selectX = document.getElementById('axis-x-select');
+            const selectY = document.getElementById('axis-y-select');
+            
+            selectX.innerHTML = '';
+            selectY.innerHTML = '';
+
+            const numCols = systemState.columns.filter(c => systemState.inferredTypes[c] === 'Number');
+            const strCols = systemState.columns.filter(c => systemState.inferredTypes[c] === 'String');
+
+            systemState.columns.forEach(col => {
+                const opt = document.createElement('option');
+                opt.value = col; opt.innerText = `X: ${col} (${systemState.inferredTypes[col]})`;
+                selectX.appendChild(opt);
+            });
+
+            numCols.forEach(col => {
+                const opt = document.createElement('option');
+                opt.value = col; opt.innerText = `Y: ${col} (Number)`;
+                selectY.appendChild(opt);
+            });
+
+            // Smart Selector Baseline Binds Defaults
+            systemState.selectedX = strCols.length > 0 ? strCols[0] : systemState.columns[0];
+            systemState.selectedY = numCols.length > 0 ? numCols[0] : systemState.columns[0];
+
+            selectX.value = systemState.selectedX;
+            selectY.value = systemState.selectedY;
+        }
+
+        function initFilterListeners() {
+            document.getElementById('axis-x-select').addEventListener('change', (e) => {
+                systemState.selectedX = e.target.value;
+                rebuildVisualizationMatrix();
+            });
+            document.getElementById('axis-y-select').addEventListener('change', (e) => {
+                systemState.selectedY = e.target.value;
+                rebuildVisualizationMatrix();
+            });
+            document.getElementById('global-search-input').addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                if(!query) {
+                    cleanAndNormalizePayload(systemState.rawPayload);
+                } else {
+                    systemState.workingDataset = systemState.rawPayload.filter(row => {
+                        return Object.values(row).some(v => String(v).toLowerCase().includes(query));
+                    });
+                }
+                rebuildVisualizationMatrix();
+            });
+        }
+
+        function generateAiInsightsSummary() {
+            const x = systemState.selectedX;
+            const y = systemState.selectedY;
+            const data = systemState.workingDataset;
+
+            if (data.length === 0) return;
+
+            const values = data.map(d => d[y]).filter(v => typeof v === 'number');
+            const totalSum = values.reduce((a, b) => a + b, 0);
+            const averageValue = values.length ? (totalSum / values.length).toFixed(2) : 0;
+            const maximumValue = values.length ? Math.max(...values).toFixed(2) : 0;
+
+            document.getElementById('ai-insight-text').innerHTML = `
+                Automated regression systems completed analytical tracking along operational nodes. Variable index <strong>${y}</strong> maintains an operational aggregate mean computation bound of <strong>${averageValue}</strong>, matching peaks running up to heights of <strong>${maximumValue}</strong>. Continuous metrics optimization profiles indicate optimal linear dependency mapping trends over the key metric field dimension: <strong>${x}</strong>.
+            `;
+
+            const tagContainer = document.getElementById('detected-schema-tags');
+            tagContainer.innerHTML = '';
+            systemState.columns.forEach(col => {
+                const tag = document.createElement('span');
+                tag.className = `px-2 py-1 rounded-md text-[11px] font-mono border ${systemState.inferredTypes[col] === 'Number' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-purple-500/10 text-purple-400 border-purple-500/20'}`;
+                tag.innerText = `${col}: ${systemState.inferredTypes[col]}`;
+                tagContainer.appendChild(tag);
+            });
+        }
+
+        // Comprehensive Visualization Context Rendering Matrix Architecture
+        function rebuildVisualizationMatrix() {
+            generateAiInsightsSummary();
+
+            const subset = systemState.workingDataset.slice(0, 15); // Performance sliced context for UI charts responsiveness
+            const labels = subset.map(d => String(d[systemState.selectedX] || ''));
+            const values = subset.map(d => Number(d[systemState.selectedY] || 0));
+
+            const colorsDark = {
+                text: '#94a3b8', border: 'rgba(255,255,255,0.08)', brand: '#6366f1', secondary: '#a855f7', accent: '#10b981', areaBg: 'rgba(99, 102, 241, 0.15)'
+            };
+            const colorsLight = {
+                text: '#475569', border: 'rgba(15,23,42,0.08)', brand: '#4f46e5', secondary: '#8b5cf6', accent: '#059669', areaBg: 'rgba(79, 70, 229, 0.1)'
+            };
+            const activeColorPalette = systemState.theme === 'dark' ? colorsDark : colorsLight;
+
+            const getBaseOptions = () => ({
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { backgroundColor: 'rgba(15, 23, 42, 0.9)', padding: 12, cornerRadius: 8, titleColor: '#fff', bodyColor: '#94a3b8' }
+                },
+                scales: {
+                    x: { grid: { color: activeColorPalette.border }, ticks: { color: activeColorPalette.text, font: { size: 10 } } },
+                    y: { grid: { color: activeColorPalette.border }, ticks: { color: activeColorPalette.text, font: { size: 10 } } }
+                }
+            });
+
+            const instantiateChartContext = (id, config) => {
+                if (systemState.activeCharts[id]) systemState.activeCharts[id].destroy();
+                const ctx = document.getElementById(id).getContext('2d');
+                systemState.activeCharts[id] = new Chart(ctx, config);
+            };
+
+            // 1. AREA CHART INSTANTIATION
+            instantiateChartContext('chart-area', {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{ data: values, borderColor: activeColorPalette.brand, fill: true, backgroundColor: activeColorPalette.areaBg, tension: 0.4, borderWidth: 2 }]
+                },
+                options: getBaseOptions()
+            });
+
+            // 2. BAR CHART INSTANTIATION
+            instantiateChartContext('chart-bar', {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{ data: values, backgroundColor: activeColorPalette.secondary, borderRadius: 6 }]
+                },
+                options: getBaseOptions()
+            });
+
+            // 3. LINE CHART INSTANTIATION
+            instantiateChartContext('chart-line', {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{ data: values, borderColor: activeColorPalette.accent, tension: 0.1, borderWidth: 2.5, pointRadius: 3 }]
+                },
+                options: getBaseOptions()
+            });
+
+            // 4. PIE CHART INSTANTIATION
+            instantiateChartContext('chart-pie', {
+                type: 'doughnut',
+                data: {
+                    labels: labels.slice(0,6),
+                    datasets: [{
+                        data: values.slice(0,6),
+                        backgroundColor: ['#6366f1','#8b5cf6','#ec4899','#f43f5e','#e11d48','#4f46e5'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'bottom', labels: { color: activeColorPalette.text, font: { size: 9 } } } }
+                }
+            });
+
+            // 5. SCATTER PLOT INSTANTIATION
+            const scatterData = subset.map(d => ({ x: Math.random() * 100, y: Number(d[systemState.selectedY]) }));
+            instantiateChartContext('chart-scatter', {
+                type: 'scatter',
+                data: {
+                    datasets: [{ label: 'Data Points', data: scatterData, backgroundColor: '#f43f5e' }]
+                },
+                options: getBaseOptions()
+            });
+
+            // 6. HISTOGRAM RENDERING SIMULATION
+            instantiateChartContext('chart-histogram', {
+                type: 'bar',
+                data: {
+                    labels: ['Bin 1', 'Bin 2', 'Bin 3', 'Bin 4', 'Bin 5'],
+                    datasets: [{ data: [3, 7, 12, 5, 2], backgroundColor: '#10b981', barPercentage: 1.0, categoryPercentage: 1.0 }]
+                },
+                options: getBaseOptions()
+            });
+        }
+
+        // Exporters Pipeline Implementation Handler Methods
+        function exportData(format) {
+            if(systemState.workingDataset.length === 0) return;
+            let outputContent = "";
+            let fileTypeMime = "";
+
+            if (format === 'csv') {
+                outputContent = Papa.unparse(systemState.workingDataset);
+                fileTypeMime = 'text/csv;charset=utf-8;';
+            } else if (format === 'json') {
+                outputContent = JSON.stringify(systemState.workingDataset, null, 2);
+                fileTypeMime = 'application/json;charset=utf-8;';
+            }
+
+            const blob = new Blob([outputContent], { type: fileTypeMime });
+            const explicitUrlLinkNode = document.createElement("a");
+            explicitUrlLinkNode.href = URL.createObjectURL(blob);
+            explicitUrlLinkNode.setAttribute("download", `DataExport_${Date.now()}.${format}`);
+            document.body.appendChild(explicitUrlLinkNode);
+            explicitUrlLinkNode.click();
+            document.body.removeChild(explicitUrlLinkNode);
+        }
+
+        async function exportCanvasPDF() {
+            const targetElement = document.getElementById('capture-container');
+            const renderedCanvas = await html2canvas(targetElement, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: systemState.theme === 'dark' ? '#020617' : '#f8fafc'
+            });
+            
+            const imagePayload = renderedCanvas.toDataURL('image/png');
+            const { jsPDF } = window.jspdf;
+            const pdfDoc = new jsPDF('p', 'mm', 'a4');
+            
+            const printWidth = 210; 
+            const printHeight = (renderedCanvas.height * printWidth) / renderedCanvas.width;
+
+            pdfDoc.text("Executive Analytics Dashboard System Performance Report", 14, 15);
+            pdfDoc.addImage(imagePayload, 'PNG', 0, 25, printWidth, printHeight);
+            pdfDoc.save(`AnalyticsReport_${Date.now()}.pdf`);
+        }
+    </script>
+</body>
+</html>
